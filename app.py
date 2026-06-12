@@ -332,33 +332,40 @@ def api_run(name):
 
 
 def _preload_models():
-    """Eagerly load the heavy models in the background so the FIRST pipeline run is
-    fast. SAM2 always (segmentation runs every time); the local Gemma only when it's
-    the active VLM backend (no point loading a 30B model when Gemini/heuristic is on).
-    Best-effort — a viewer-only env without torch/sam2 just logs and skips.
-    """
-    try:
-        import sam2_masks
-        print("[RBF] preloading SAM2 …", flush=True)
-        ok = sam2_masks.preload()
-        print(f"[RBF] SAM2 {'ready' if ok else 'unavailable (skipped)'}", flush=True)
-    except Exception as e:  # noqa: BLE001
-        print(f"[RBF] SAM2 preload skipped: {e}", flush=True)
+    """Eagerly load the heavy models so the FIRST pipeline run is fast.
 
-    try:
-        st = _config_status()
-        if st["active_backend"].startswith("gemma"):
-            import gemma_vlm
-            print(f"[RBF] preloading local Gemma ({st['vlm_backend']}) …", flush=True)
-            ok = gemma_vlm.preload(st["vlm_backend"])
-            print(f"[RBF] Gemma {'ready' if ok else 'unavailable (skipped)'}", flush=True)
-    except Exception as e:  # noqa: BLE001
-        print(f"[RBF] Gemma preload skipped: {e}", flush=True)
+    SAM2 always (segmentation runs every time); local Gemma only when it's the active
+    VLM backend. Failures raise — no silent skip.
+    """
+    import sam2_masks
+    print("[RBF] preloading SAM2 …", flush=True)
+    sam2_masks.preload()
+    print("[RBF] SAM2 ready", flush=True)
+
+    st = _config_status()
+    if st["active_backend"].startswith("gemma"):
+        import gemma_vlm
+        print(f"[RBF] preloading local Gemma ({st['vlm_backend']}) …", flush=True)
+        gemma_vlm.preload(st["vlm_backend"])
+        print("[RBF] Gemma ready", flush=True)
 
 
 if __name__ == "__main__":
+    from env_check import require_python
+    try:
+        require_python()
+    except RuntimeError as e:
+        print(f"[RBF] ERROR: {e}", flush=True)
+        raise SystemExit(1) from e
+
     print(f"[RBF] workspace: {DEPTH_ROOT}  | gemini: {bool(os.environ.get('GEMINI_API_KEY'))}")
-    if os.environ.get("RBF_PRELOAD", "1") != "0":      # set RBF_PRELOAD=0 to disable
-        threading.Thread(target=_preload_models, daemon=True).start()
+    if os.environ.get("RBF_PRELOAD", "1") != "0":
+        try:
+            _preload_models()
+        except Exception as e:  # noqa: BLE001
+            import traceback
+            print(f"[RBF] model preload failed:\n{e}", flush=True)
+            traceback.print_exc()
+            raise SystemExit(1) from e
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)),
             threaded=True, debug=False)

@@ -19,6 +19,7 @@ import json
 import logging
 import re
 import threading
+from pathlib import Path
 
 import numpy as np
 
@@ -69,7 +70,7 @@ def _get_pipe(path: str):
         from transformers import pipeline
         from torch_device import pick_device, pick_dtype
         device = pick_device(torch)         # cuda → Apple-Silicon mps → cpu
-        kwargs = {"torch_dtype": pick_dtype(device, torch)}
+        kwargs = {"dtype": pick_dtype(device, torch)}
         if device == "cuda":
             kwargs["device_map"] = "auto"   # accelerate sharding (CUDA only)
         else:
@@ -79,17 +80,20 @@ def _get_pipe(path: str):
     return _PIPE[path]
 
 
-def preload(backend: str = "auto") -> bool:
+def preload(backend: str = "auto") -> None:
     """Eagerly load the local Gemma model for `backend` so the first run isn't slow.
-    Best-effort: returns True if loaded, False if no path or torch/transformers fails."""
+
+    Raises RuntimeError if the model path is missing or transformers/torch cannot load it.
+    """
+    from env_check import require_gemma_support
+    require_gemma_support()
     path = model_path_for(backend)
     if not path:
-        return False
-    try:
-        _get_pipe(path)
-        return True
-    except Exception:  # noqa: BLE001
-        return False
+        raise RuntimeError(
+            "Local Gemma path not configured. Run:  bash setup_models.sh")
+    if not Path(path).is_dir():
+        raise RuntimeError(f"Local Gemma model directory not found: {path}")
+    _get_pipe(path)
 
 
 def _match_bracket(text: str, start: int):

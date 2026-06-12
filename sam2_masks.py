@@ -71,14 +71,14 @@ def get_predictor():
     return _PREDICTOR
 
 
-def preload() -> bool:
-    """Eagerly build the SAM2 predictor so the first run isn't slow. Best-effort:
-    returns True if loaded, False if SAM2/torch isn't available here."""
-    try:
-        get_predictor()
-        return True
-    except Exception:  # noqa: BLE001
-        return False
+def preload() -> None:
+    """Eagerly build the SAM2 predictor so the first run isn't slow.
+
+    Raises RuntimeError with an actionable message if SAM2/torch/checkpoint is missing.
+    """
+    from env_check import require_sam2
+    require_sam2()
+    get_predictor()
 
 
 def _grid_points(H: int, W: int, fg: np.ndarray, n: int) -> list[tuple]:
