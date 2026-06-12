@@ -234,7 +234,9 @@ def run_capture(folder_dir: str | Path, catalog=None, progress=None,
     frames = list_frames(folder_dir)
     nframes = len(frames)
     if catalog is None:
-        catalog = catalog_from_folders([name])
+        import config as rbf_config
+        from box_fit import boxes_from_items
+        catalog = boxes_from_items(rbf_config.load_box_catalog())
 
     overlay_dir = Path(overlay_path).parent if overlay_path else None
 

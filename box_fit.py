@@ -14,6 +14,15 @@ from typing import Optional
 
 _DIM_RE = re.compile(r"(\d+)\s*[Xx]\s*(\d+)\s*[Xx]\s*(\d+)")
 
+# Default moving-box catalog (cm, W×H×D order as printed on the box).
+DEFAULT_CATALOG_DIMS: list[list[float]] = [
+    [20, 70, 40],
+    [37, 44, 40],
+    [37, 44, 50],
+    [150, 20, 64],
+    [175, 15, 5],
+]
+
 
 def parse_dims(text: str) -> Optional[list[float]]:
     """Extract the first WxHxD triple (cm) found anywhere in `text`.
@@ -35,6 +44,37 @@ class Box:
     @property
     def volume_cm3(self) -> float:
         return self.dims_cm[0] * self.dims_cm[1] * self.dims_cm[2]
+
+
+def box_name_from_dims(dims: list[float]) -> str:
+    return "box_" + "x".join(str(int(d)) for d in dims)
+
+
+def default_box_catalog_items() -> list[dict]:
+    """Default catalog as JSON-serializable [{name, dims_cm}, ...]."""
+    return [{"name": box_name_from_dims(d), "dims_cm": d}
+            for d in DEFAULT_CATALOG_DIMS]
+
+
+def boxes_from_items(items) -> list[Box]:
+    """Build Box objects from [{name, dims_cm:[w,h,d]}, ...]."""
+    boxes: list[Box] = []
+    for b in items or []:
+        try:
+            name = (str(b.get("name") or "").strip())
+            dims = [float(x) for x in b.get("dims_cm", [])][:3]
+        except (TypeError, ValueError):
+            continue
+        if len(dims) == 3 and all(d > 0 for d in dims):
+            if not name:
+                name = box_name_from_dims(dims)
+            boxes.append(Box(name, dims, sorted(dims)))
+    return boxes
+
+
+def catalog_items_from_boxes(boxes: list[Box]) -> list[dict]:
+    return [{"name": b.name, "dims_cm": [round(d, 1) for d in b.dims_cm]}
+            for b in boxes]
 
 
 def load_catalog(csv_path: str | Path) -> list[Box]:

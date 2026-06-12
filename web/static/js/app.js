@@ -219,7 +219,7 @@ function setStatus(txt,frac){
   if(frac!=null) document.getElementById("bar-fill").style.width=(frac*100)+"%";
 }
 async function run(name){
-  const catalog=readBoxes();
+  const catalog=await saveCatalog();
   if(!catalog.length){ setStatus("add at least one box",0); return; }
   setStatus("starting…",0.02);
   const resp=await fetch(`/api/run/${encodeURIComponent(name)}`,{
@@ -290,8 +290,23 @@ document.getElementById("cfg-backend").addEventListener("change",e=>
   saveConfig({vlm_backend:e.target.value}));
 loadConfig();
 
-/* ---- editable box catalog (left sidebar, scrollable) ---- */
+/* ---- editable box catalog (left sidebar, persisted in config.local.json) ---- */
 const boxList=document.getElementById("box-list");
+let catalogSaveTimer=null;
+function scheduleSaveCatalog(){
+  clearTimeout(catalogSaveTimer);
+  catalogSaveTimer=setTimeout(()=>{ saveCatalog(); },400);
+}
+async function saveCatalog(){
+  const catalog=readBoxes();
+  if(!catalog.length) return catalog;
+  try{
+    const r=await fetch("/api/catalog",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({catalog})});
+    if(r.ok) return await r.json();
+  }catch(e){}
+  return catalog;
+}
 function addBoxRow(name="",dims=["","",""]){
   const row=document.createElement("div"); row.className="box-row";
   row.innerHTML=
@@ -300,7 +315,10 @@ function addBoxRow(name="",dims=["","",""]){
     `<span class="x">×</span><input class="bd" type="number" min="1" placeholder="H" value="${dims[1]}">`+
     `<span class="x">×</span><input class="bd" type="number" min="1" placeholder="D" value="${dims[2]}">`+
     `<button class="del" title="delete">x</button>`;
-  row.querySelector(".del").addEventListener("click",()=>row.remove());
+  row.querySelector(".del").addEventListener("click",()=>{
+    row.remove(); scheduleSaveCatalog();
+  });
+  row.querySelectorAll("input").forEach(i=>i.addEventListener("input",scheduleSaveCatalog));
   boxList.appendChild(row);
 }
 function readBoxes(){
@@ -308,11 +326,11 @@ function readBoxes(){
   boxList.querySelectorAll(".box-row").forEach(r=>{
     const name=r.querySelector(".bn").value.trim();
     const d=[...r.querySelectorAll(".bd")].map(i=>parseFloat(i.value));
-    if(d.every(v=>v>0)) out.push({name:name||"box",dims_cm:d});
+    if(d.every(v=>v>0)) out.push({name,dims_cm:d});
   });
   return out;
 }
-document.getElementById("btn-add-box").addEventListener("click",()=>addBoxRow());
+document.getElementById("btn-add-box").addEventListener("click",()=>{ addBoxRow(); scheduleSaveCatalog(); });
 (async function loadCatalog(){
   try{
     const r=await fetch("/api/catalog"); const cat=await r.json();

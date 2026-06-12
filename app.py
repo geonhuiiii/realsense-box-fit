@@ -85,32 +85,13 @@ def _resolve_dir(name: str) -> Path | None:
 
 
 def _catalog():
-    from box_fit import catalog_from_folders
-    names = []
-    if DEPTH_ROOT.exists():
-        names = [p.name for p in DEPTH_ROOT.iterdir() if p.is_dir()]
-    cat = catalog_from_folders(names)
-    if not cat:                       # sensible default catalog (cm)
-        from box_fit import Box
-        defaults = {"box_small": [37, 40, 44], "box_medium": [37, 44, 50],
-                    "box_long": [20, 64, 150]}
-        cat = [Box(n, d, sorted(d)) for n, d in defaults.items()]
-    return cat
+    from box_fit import boxes_from_items
+    return boxes_from_items(rbf_config.load_box_catalog())
 
 
 def _parse_catalog(items) -> list:
-    """Build Box objects from user-supplied [{name, dims_cm:[w,h,d]}, ...]."""
-    from box_fit import Box
-    boxes = []
-    for b in items or []:
-        try:
-            name = (str(b.get("name") or "").strip() or "box")
-            dims = [float(x) for x in b.get("dims_cm", [])][:3]
-        except (TypeError, ValueError):
-            continue
-        if len(dims) == 3 and all(d > 0 for d in dims):
-            boxes.append(Box(name, dims, sorted(dims)))
-    return boxes
+    from box_fit import boxes_from_items
+    return boxes_from_items(items)
 
 
 def _ensure_reports(folder: Path) -> None:
@@ -182,11 +163,26 @@ def api_folders():
     return jsonify(_list_folders())
 
 
-@app.route("/api/catalog")
-def api_catalog():
-    """Default box catalog (user can edit it in the sidebar before running)."""
-    return jsonify([{"name": b.name, "dims_cm": [round(d, 1) for d in b.dims_cm]}
-                    for b in _catalog()])
+@app.route("/api/catalog", methods=["GET"])
+def api_catalog_get():
+    """Persisted box catalog (editable in the sidebar)."""
+    return jsonify(rbf_config.load_box_catalog())
+
+
+@app.route("/api/catalog", methods=["POST"])
+def api_catalog_set():
+    """Save the box catalog from the sidebar to config.local.json."""
+    body = request.get_json(silent=True) or {}
+    items = body.get("catalog")
+    if not isinstance(items, list):
+        return jsonify(error="catalog must be a list"), 400
+    if not items:
+        return jsonify(error="catalog must have at least one box"), 400
+    try:
+        saved = rbf_config.save_box_catalog(items)
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=str(e)), 400
+    return jsonify(saved)
 
 
 @app.route("/api/result/<name>")
@@ -296,7 +292,13 @@ def api_run(name):
         return jsonify(error=f"capture '{name}' not found"), 404
 
     body = request.get_json(silent=True) or {}
-    catalog = _parse_catalog(body.get("catalog")) or _catalog()
+    catalog_items = body.get("catalog")
+    if catalog_items:
+        try:
+            rbf_config.save_box_catalog(catalog_items)
+        except Exception:
+            pass
+    catalog = _parse_catalog(catalog_items) or _catalog()
 
     q: queue.Queue = queue.Queue()
 
