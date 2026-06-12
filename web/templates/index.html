@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RealSense Box-Fit</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script type="importmap">
+  {"imports":{
+    "three":"https://unpkg.com/three@0.159.0/build/three.module.js",
+    "three/addons/":"https://unpkg.com/three@0.159.0/examples/jsm/"
+  }}
+  </script>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <h1>RealSense <span>Box-Fit</span></h1>
+    <p class="sub">RGB-D → SAM2 → point cloud → OBB → VLM → box packing</p>
+
+    <div class="field">
+      <label>Capture (scene)</label>
+      <select id="folder">
+        {% for f in folders %}
+        <option value="{{ f.name }}">{{ f.name }} · {{ f.source }}{% if f.frames > 1 %} · {{ f.frames }} frames{% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <details class="upload">
+      <summary>Upload RGB-D (one or many frames)</summary>
+      <p class="hint">A house needs several shots. Add a row per view — each row is
+        one aligned RGB + depth (+ optional report). Or drop a .zip.</p>
+      <div id="frame-rows"></div>
+      <button id="btn-add-frame" type="button">+ add frame</button>
+      <p class="hint" style="margin-top:10px">or a single .zip (rgb.png + depth_aligned.npy, or frame_00/…):</p>
+      <input type="file" id="up-zip" accept=".zip"><span class="cap">zip (optional)</span>
+      <button id="btn-upload">Upload</button>
+    </details>
+
+    <!-- editable box catalog: the packer picks the smallest box(es) from these -->
+    <div class="field boxes">
+      <label>Box catalog (cm) — packer uses these</label>
+      <div id="box-list" class="box-list"></div>
+      <button id="btn-add-box" type="button">+ add box</button>
+    </div>
+
+    <button id="btn-run" class="run">▶ Run pipeline</button>
+
+    <div class="status">
+      <div class="bar"><div id="bar-fill"></div></div>
+      <div id="status-text" class="muted">idle</div>
+      <div id="vlm-status" class="gemini off">VLM: …</div>
+    </div>
+
+    <details class="settings">
+      <summary>Models &amp; API key</summary>
+      <div class="field">
+        <label>VLM backend</label>
+        <select id="cfg-backend">
+          <option value="auto">auto (Gemini key → Gemma → heuristic)</option>
+          <option value="gemini">Gemini API</option>
+          <option value="gemma_e4b">Gemma 4 E4B (local)</option>
+          <option value="gemma_31b">Gemma 4 31B (local)</option>
+          <option value="heuristic">heuristic (no model)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Gemini API key (saved &amp; kept)</label>
+        <div class="keyrow">
+          <input type="password" id="cfg-key" placeholder="paste key…">
+          <button id="cfg-save" type="button">Save</button>
+        </div>
+        <span id="cfg-key-state" class="cap"></span>
+      </div>
+      <div class="paths">
+        <div class="prow"><span>SAM2</span><code id="cfg-sam">—</code></div>
+        <div class="prow"><span>Gemma E4B</span><code id="cfg-e4b">—</code></div>
+        <div class="prow"><span>Gemma 31B</span><code id="cfg-31b">—</code></div>
+        <p class="hint">Paths are filled in automatically by <code>setup_models.sh</code>.</p>
+      </div>
+    </details>
+
+    <details class="quote">
+      <summary>견적서 생성 (Generate quote)</summary>
+      <p class="hint">실행이 끝나면 VLM이 차량 · 작업유형 · 인원 · 비용 · 합계 · 요청사항 · 짐 목록을
+        모두 예상해 자동으로 채웁니다(· 자동 표시). 사람은 고객 정보 · 일정 · 폐기짐 등 필요한 부분만
+        수정하면 됩니다.</p>
+      <div class="qgrid">
+        <div class="field"><label>담당자</label><input id="q-manager" placeholder="박홍연 매니저"></div>
+        <div class="field"><label>고객명</label><input id="q-customer_name"></div>
+        <div class="field"><label>연락처</label><input id="q-customer_phone" placeholder="010-…"></div>
+        <div class="field"><label>출발지 주소</label><input id="q-origin_address"></div>
+        <div class="field"><label>입고일자</label><input id="q-origin_date" placeholder="2026.07.01"></div>
+        <div class="field"><label>입고 시작</label><input id="q-origin_time" placeholder="오전"></div>
+        <div class="field"><label>도착지 주소</label><input id="q-dest_address"></div>
+        <div class="field"><label>출고일자</label><input id="q-dest_date"></div>
+        <div class="field"><label>출고 시작</label><input id="q-dest_time"></div>
+        <div class="field"><label>입고 작업유형 · 자동</label><input id="q-work_in_type" placeholder="1층작업 / E/V작업"></div>
+        <div class="field"><label>출고 작업유형 · 자동</label><input id="q-work_out_type"></div>
+        <div class="field"><label>입고 인원(남:녀) · 자동</label><input id="q-crew_in" placeholder="2:1"></div>
+        <div class="field"><label>출고 인원(남:녀) · 자동</label><input id="q-crew_out" placeholder="2:1"></div>
+        <div class="field"><label>입고 총액(만원) · 자동</label><input id="q-cost_in" inputmode="numeric"></div>
+        <div class="field"><label>출고 총액(만원) · 자동</label><input id="q-cost_out" inputmode="numeric"></div>
+        <div class="field"><label>계약금(만원) · 자동</label><input id="q-deposit" inputmode="numeric"></div>
+        <div class="field"><label>합계(만원) · 자동</label><input id="q-total" inputmode="numeric" placeholder="실행 결과 견적"></div>
+        <div class="field"><label>보관기간</label><input id="q-storage_period" placeholder="260701-260801"></div>
+        <div class="field"><label>보관비 총액(만원)</label><input id="q-storage_total" inputmode="numeric"></div>
+        <div class="field"><label>보관 1일 정산(원)</label><input id="q-storage_daily" inputmode="numeric"></div>
+      </div>
+      <div class="field"><label>고객 요청사항 (줄바꿈 = 항목)</label><textarea id="q-requests" rows="2"></textarea></div>
+      <div class="field"><label>폐기짐 (줄바꿈 = 항목)</label><textarea id="q-disposal" rows="2"></textarea></div>
+      <button id="btn-quote" type="button">견적서 다운로드 (.docx)</button>
+      <span id="q-state" class="cap"></span>
+    </details>
+
+    <div class="toggles">
+      <label><input type="checkbox" id="t-points" checked> points</label>
+      <label><input type="checkbox" id="t-obb" checked> OBB</label>
+      <label><input type="checkbox" id="t-labels" checked> labels</label>
+      <label><input type="checkbox" id="t-grid" checked> grid</label>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="views">
+      <div class="view">
+        <div class="vtitle">Segmentation + OBB</div>
+        <div id="viewL" class="canvas"></div>
+      </div>
+      <div class="view">
+        <div class="vtitle">Truck loading + quote</div>
+        <div id="viewR" class="canvas"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div id="pack-summary" class="summary muted">Run a capture to see results.</div>
+      <div class="tablewrap"><table id="obj-table"></table></div>
+    </div>
+  </main>
+</div>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

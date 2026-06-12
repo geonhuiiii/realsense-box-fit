@@ -1,0 +1,17 @@
+# Full pipeline (segmentation, depth back-projection, OBB, rendering).
+# NOTE: SAM2 (segment-anything-2) + a CUDA-enabled PyTorch are required for
+# live processing and must be installed separately — see README.
+numpy>=1.24,<2.0
+scipy>=1.10
+opencv-python>=4.8
+open3d>=0.17
+matplotlib>=3.7
+flask>=3.0
+pillow>=10.0
+python-docx>=1.1    # fill the .docx quote template (견적서 생성)
+google-genai>=1.0   # optional — only needed for the Gemini VLM stage
+huggingface_hub>=0.24  # setup_models.sh — download SAM2 + Gemma
+# Local Gemma 4 VLM fallback (used when no Gemini key). Gemma 4 needs a recent
+# transformers (with the gemma4 model) and torch>=2.4 (CUDA), installed separately.
+transformers>=4.57
+accelerate>=0.30

@@ -1,0 +1,30 @@
+# Generated results / data (kept out of the repo; demo/ is committed instead)
+outputs/
+realsense/
+*.zip
+
+# Raw / heavy data
+*.npy
+*.ply
+
+# Downloaded models (SAM2 + Gemma) and local runtime config
+models/
+*.pt
+*.safetensors
+config.local.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# OS / editor
+.DS_Store
+.ipynb_checkpoints/
+
+# Keep the shipped demo (overlays are PNGs, not covered by the rules above)
+!demo/
+!demo/**
