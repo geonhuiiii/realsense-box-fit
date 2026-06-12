@@ -11,7 +11,7 @@ this module is cheap. Any failure degrades to the heuristic — never raises.
 Gemma is run in a "think first" mode: it reasons step by step (filter walls,
 catch duplicate masks, reason per-axis compression) before emitting the final
 JSON, with a generous token budget. Tune via config: `gemma_think_tokens`
-(default 8192) and `gemma_think` (false to skip the reasoning preface).
+(default 4096) and `gemma_think` (false to skip the reasoning preface).
 """
 from __future__ import annotations
 
@@ -31,10 +31,8 @@ log = logging.getLogger(__name__)
 _PIPE = {}        # cache: model_path -> transformers pipeline
 _LOCK = threading.Lock()        # guard pipeline build (preload thread vs run worker)
 
-# Default "thinking budget" for Gemma (max new tokens). Raise via config key
-# `gemma_think_tokens` to let it reason longer. Set `gemma_think` to false to skip
-# the chain-of-thought preface (faster, less thorough).
-_THINK_TOKENS_DEFAULT = 2048
+# Default max new tokens for Gemma (thinking + long prompts need headroom).
+_THINK_TOKENS_DEFAULT = 4096
 
 # Appended to the prompt for Gemma only (Gemini uses structured output instead):
 # make it reason step by step BEFORE emitting the final JSON, so it filters
@@ -70,13 +68,19 @@ def _get_pipe(path: str):
         from transformers import pipeline
         from torch_device import pick_device, pick_dtype
         device = pick_device(torch)         # cuda → Apple-Silicon mps → cpu
-        kwargs = {"dtype": pick_dtype(device, torch)}
+        dtype = pick_dtype(device, torch)
+        kwargs = {
+            "dtype": dtype,
+            "model_kwargs": {"attn_implementation": "sdpa"},  # faster on MPS/CUDA
+        }
         if device == "cuda":
             kwargs["device_map"] = "auto"   # accelerate sharding (CUDA only)
         else:
             kwargs["device"] = device       # explicit cpu / mps placement
         pipe = pipeline("image-text-to-text", model=path, **kwargs)
         _PIPE[path] = pipe
+        p = next(pipe.model.parameters())
+        log.info("Gemma loaded: device=%s dtype=%s", p.device, p.dtype)
     return _PIPE[path]
 
 
@@ -227,14 +231,26 @@ def analyze(rgb: np.ndarray, objects: list[dict], catalog=None,
 
     reply = ""
     try:
+        import os
+        import time
         from PIL import Image
+        import torch
         pipe = _get_pipe(path)
         img = Image.fromarray(rgb.astype(np.uint8))
         messages = [{"role": "user", "content": [
             {"type": "image", "image": img},
             {"type": "text", "text": prompt},
         ]}]
-        out = pipe(text=messages, max_new_tokens=max_tokens, do_sample=False)
+        # app.py pins OMP=1 for SAM2 safety; allow more CPU threads during MPS fallback.
+        n_threads = min(8, os.cpu_count() or 4)
+        torch.set_num_threads(n_threads)
+        t0 = time.perf_counter()
+        with torch.inference_mode():
+            out = pipe(text=messages, max_new_tokens=max_tokens, do_sample=False)
+        elapsed = time.perf_counter() - t0
+        p = next(pipe.model.parameters())
+        log.info("Gemma infer: %.1fs (%d objects, think=%s, max_tokens=%d, %s/%s)",
+                 elapsed, len(objects), think, max_tokens, p.device, p.dtype)
         reply = _reply_text(out)
         data = _extract_json(reply)
         recs = {}

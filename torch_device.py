@@ -4,7 +4,8 @@ Centralises the "what hardware do we run on" decision so SAM2 and Gemma behave o
 macOS as well as Linux/CUDA:
 
 - device: CUDA if present, else Apple-Silicon **MPS**, else CPU.
-- dtype: ``bfloat16`` only on CUDA (CPU/MPS don't support it well) — float32 elsewhere.
+- dtype: ``bfloat16`` on CUDA; ``float16`` on Apple-Silicon MPS (much faster than float32);
+  float32 on CPU.
 
 When MPS is chosen we also enable ``PYTORCH_ENABLE_MPS_FALLBACK`` so the handful of
 ops SAM2/transformers run that MPS doesn't implement transparently fall back to CPU
@@ -37,6 +38,10 @@ def pick_device(torch=None) -> str:
 
 
 def pick_dtype(device: str, torch=None):
-    """bfloat16 on CUDA (memory win, well supported); float32 on CPU/MPS."""
+    """Best inference dtype per device (speed vs compatibility)."""
     torch = _torch(torch)
-    return torch.bfloat16 if device == "cuda" else torch.float32
+    if device == "cuda":
+        return torch.bfloat16
+    if device == "mps":
+        return torch.float16          # ~2× faster than float32 on Apple Silicon
+    return torch.float32

@@ -28,7 +28,12 @@ _ENV_MAP = {
     "gemini_model": "GEMINI_MODEL",
 }
 
-_DEFAULTS = {"vlm_backend": "auto", "gemini_model": "gemini-3.5-flash"}
+_DEFAULTS = {
+    "vlm_backend": "auto",
+    "gemini_model": "gemini-3.5-flash",
+    "gemma_think": True,
+    "gemma_think_tokens": 4096,
+}
 
 
 def load() -> dict:

@@ -347,7 +347,11 @@ def _preload_models():
         import gemma_vlm
         print(f"[RBF] preloading local Gemma ({st['vlm_backend']}) …", flush=True)
         gemma_vlm.preload(st["vlm_backend"])
-        print("[RBF] Gemma ready", flush=True)
+        import torch
+        from torch_device import pick_device
+        dev = pick_device(torch)
+        p = next(gemma_vlm._get_pipe(gemma_vlm.model_path_for(st["vlm_backend"])).model.parameters())
+        print(f"[RBF] Gemma ready ({dev}, {p.dtype})", flush=True)
 
 
 if __name__ == "__main__":
