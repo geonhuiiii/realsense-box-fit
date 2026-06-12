@@ -60,7 +60,7 @@ def get_amg_generator():
             from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
             _AMG = SAM2AutomaticMaskGenerator(
                 model,
-                points_per_side=32,          # 4096 prompts (default 32 → 1024)
+                points_per_side=64,          # 4096 prompts (default 32 → 1024)
                 points_per_batch=64,
                 pred_iou_thresh=0.86,
                 stability_score_thresh=0.95,
