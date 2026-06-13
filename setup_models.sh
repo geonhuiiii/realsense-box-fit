@@ -75,9 +75,9 @@ rbf_setup_models() {
 
   # --- SAM2 checkpoint ------------------------------------------------------ #
   local SAM2_CKPT SAM2_URL SAM2_CFG
-  SAM2_CKPT="$MODELS/sam2/sam2_hiera_large.pt"
-  SAM2_URL="https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt"
-  SAM2_CFG="sam2_hiera_l.yaml"           # resolved on the sam2 hydra search path
+  SAM2_CKPT="$MODELS/sam2/sam2_hiera_base_plus.pt"
+  SAM2_URL="https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_base_plus.pt"
+  SAM2_CFG="sam2_hiera_b+.yaml"          # resolved on the sam2 hydra search path
   if [ "$SKIP_SAM" -eq 0 ]; then
     if [ -s "$SAM2_CKPT" ]; then
       echo "[sam2] already present: $SAM2_CKPT"
